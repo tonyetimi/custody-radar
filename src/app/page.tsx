@@ -30,7 +30,6 @@ const OsirisMap = dynamic(() => import('@/components/OsirisMap'), { ssr: false }
 const LayerPanel = dynamic(() => import('@/components/LayerPanel'));
 const SpaceCam = dynamic(() => import('@/components/SpaceCam'), { ssr: false });
 const CameraViewer = dynamic(() => import('@/components/CameraViewer'));
-const OsintPanel = dynamic(() => import('@/components/OsintPanel'));
 const OiPanel = dynamic(() => import('@/components/OiPanel'));
 const DrawingToolbar = dynamic(() => import('@/components/DrawingToolbar'), { ssr: false });
 const DrawHud = dynamic(() => import('@/components/DrawHud'), { ssr: false });
@@ -42,7 +41,7 @@ const LIDAR_DRAW_TITLE: Record<LidarPurpose, string> = { field: 'FIELD', profile
 // not the toolbar has loaded yet.
 import { toShape, queryRing, type DrawMode, type DrawnShape, type DrawProgress, type DrawResult } from '@/lib/draw';
 import { selectInPolygon } from '@/lib/aoi';
-import { pickLandingCity } from '@/lib/landing-cities';
+import { DEFAULT_VIEW } from '@/lib/default-view';
 import { placeAt, searchPlaces } from '@/lib/geosearch';
 import { diffSweep, appendEvents, type WatchBaseline, type WatchEvent } from '@/lib/watch';
 import { STORAGE_KEY, serializeShapes, deserializeShapes, shapesToGeoJSON, downloadFile } from '@/lib/aoi-export';
@@ -362,7 +361,7 @@ export default function Dashboard() {
   const layerLiveStatus = useMemo(() => (transitStatus ? { transit: transitStatus.text } : undefined), [transitStatus]);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number; bounds?: { west: number; south: number; east: number; north: number } } | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [mobilePanel, setMobilePanel] = useState<'layers'|'markets'|'intel'|'search'|'recon'|'remote'|'oi'|null>(null);
+  const [mobilePanel, setMobilePanel] = useState<'layers'|'markets'|'intel'|'search'|'remote'|null>(null);
 
   // ── OSIRIS OI ── the run lives here, not in the panel, so the globe keeps
   // drawing it while the panel is closed. State goes to the map's OI layer
@@ -418,9 +417,6 @@ export default function Dashboard() {
   const handleOiSelect = useCallback((key: string | null) => {
     setOiSelected(key);
     if (!key) return;
-    setOiMode('forecast');
-    if (window.matchMedia('(max-width: 767px)').matches) setMobilePanel('oi');
-    else setShowOi(true);
   }, []);
   // Going somewhere on purpose takes the camera off the director.
   const handleOiLocate = useCallback((lat: number, lng: number, zoom?: number) => {
@@ -432,7 +428,7 @@ export default function Dashboard() {
   const oiTheaterOn = oiTheater;
   const oiHasRun = Boolean(oi.state);
   // On a phone the drawer covers the lower half: the globe, and anywhere OI flies to, centre in the space above it.
-  const oiDrawerOpen = mobilePanel === 'oi';
+  const oiDrawerOpen = false;
   useEffect(() => {
     if (!oiDrawerOpen) return;
     const drawer = Math.round(Math.min(window.innerHeight * 0.55, window.innerHeight - 100)) + 52;
@@ -457,8 +453,6 @@ export default function Dashboard() {
     if (!id) return;
     autoLocateCancelled.current = true;
     setOiMode('forecast');
-    if (window.matchMedia('(max-width: 767px)').matches) setMobilePanel('oi');
-    else setShowOi(true);
     void oi.watch(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -470,7 +464,7 @@ export default function Dashboard() {
   const [terrainStatus, setTerrainStatus] = useState<TerrainStatus>('idle');
   const [terrainRetry, setTerrainRetry] = useState(0);
   const [mapStyle, setMapStyle] = useState<'dark'|'satellite'>('dark');
-  const [sweepData, setSweepData] = useState<any>(null);
+  const [sweepData] = useState<any>(null);
   const [scanTargets, setScanTargets] = useState<any[]>([]);
   const [drawnPolygons, setDrawnPolygons] = useState<DrawnShape[]>([]);
   const [demoMode, setDemoMode] = useState(false);
@@ -579,15 +573,10 @@ export default function Dashboard() {
     const right = (show: () => void) => { setShowOi(false); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); show(); };
     if (panel === 'markets') { if (phone) setMobilePanel('markets'); else right(() => setShowMarkets(true)); }
     else if (panel === 'alerts') right(() => setShowAlerts(true));
-    else if (panel === 'intel') { if (phone) setMobilePanel('recon'); else right(() => setShowIntel(true)); }
+    else if (panel === 'intel') { /* RECON panel removed in this build */ }
     else if (panel === 'layers') { if (phone) setMobilePanel('layers'); else setShowLayers(true); }
     else if (panel === 'directions') setShowDirections(true);
     else if (panel === 'terrain') { setLidarTab('terrain'); setShowArcGIS(true); }
-    else if (panel === 'forecast' || panel === 'workspace') {
-      setOiMode('forecast');
-      if (phone) setMobilePanel('oi'); else setShowOi(true);
-      if (panel === 'workspace' && assistOi.current.state && !phone) setOiTheater(true);
-    }
   }, []);
   const assistTheater = useRef(oiTheater);
   const assistStage = useRef<Stage>(oiStage);
@@ -634,10 +623,7 @@ export default function Dashboard() {
       const run = assistOi.current.state;
       if (view && view !== 'globe' && !run) return { ok: false, error: `The ${view} needs a forecast: start one first` };
       if (open === false) { setOiTheater(false); return { ok: true, summary: 'Closed the workspace' }; }
-      setShowOi(true);
-      setOiTheater(true);
-      if (view) setOiStage(view);
-      return { ok: true, summary: `Opened the workspace${view ? ` on the ${view}` : ''}` };
+      return { ok: false, error: 'The OI workspace is not available in this build' };
     },
     select: name => {
       const run = assistOi.current.state;
@@ -728,7 +714,7 @@ export default function Dashboard() {
      nearly at street level, and the globe was never seen. */
   useEffect(() => {
     if (!splashGone || !homeLocation || autoLocateCancelled.current) return;
-    setFlyToLocation({ ...homeLocation, zoom: 8, duration: 3500, ts: Date.now() });
+    setFlyToLocation({ ...homeLocation, zoom: DEFAULT_VIEW.zoom, duration: 3500, ts: Date.now() });
   }, [splashGone, homeLocation]);
 
   // On mount: restore layers, probe optional feeds, and geolocate by IP
@@ -764,35 +750,11 @@ export default function Dashboard() {
     const cancelAutoLocate = () => { autoLocateCancelled.current = true; };
     window.addEventListener('pointerdown', cancelAutoLocate, { once: true });
     window.addEventListener('keydown', cancelAutoLocate, { once: true });
-    /* Asked for at once rather than after a fixed 3 s wait, so the answer is
-       in hand when the splash lifts; the effect above does the flying. When
-       the visitor's city can't be found (no public address, every provider
-       failed, or no answer within 6 s) the fly-in still happens, to a random
-       well-covered city, rather than stopping on the globe. */
-    let located = false;
-    const landSomewhere = () => {
-      if (located || geoController.signal.aborted) return;
-      located = true;
-      const city = pickLandingCity();
-      setHomeLocation({ lat: city.lat, lng: city.lng });
-    };
-    const geoGiveUp = setTimeout(landSomewhere, 6000);
-    fetch('/api/geo', { signal: geoController.signal })
-      .then(r => r.json())
-      .then(geo => {
-        if (located || geoController.signal.aborted) return;
-        if (geo.status === 'success' &&
-            Number.isFinite(geo.lat) && Number.isFinite(geo.lon) && Math.abs(geo.lat) <= 90 && Math.abs(geo.lon) <= 180) {
-          located = true;
-          setHomeLocation({ lat: geo.lat, lng: geo.lon });
-        } else {
-          landSomewhere();
-        }
-      })
-      .catch(landSomewhere);
+    /* This build opens on Nigeria rather than the visitor's city: the camera
+       settles on DEFAULT_VIEW as the splash lifts, with no IP lookup. */
+    setHomeLocation({ lat: DEFAULT_VIEW.lat, lng: DEFAULT_VIEW.lng });
 
     return () => {
-      clearTimeout(geoGiveUp);
       geoController.abort();
       window.removeEventListener('pointerdown', cancelAutoLocate);
       window.removeEventListener('keydown', cancelAutoLocate);
@@ -861,16 +823,9 @@ export default function Dashboard() {
         if (document.fullscreenElement) document.exitFullscreen();
         else document.documentElement.requestFullscreen();
       }
-      if (e.key === 'o' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        setOiMode('assist');
-        setOiAutoFocus(true);
-        if (window.matchMedia('(max-width: 767px)').matches) setMobilePanel('oi');
-        else { setShowOi(true); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); }
-      }
       if (e.key === 'l') setShowLayers(p => !p);
       if (e.key === 'm') setShowMarkets(p => !p);
       if (e.key === 'c') setShowScmPanel(p => !p);
-      if (e.key === 'i') setShowIntel(p => !p);
       if (e.key === 's') { setShowDesktopSearch(p => !p); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); }
       if (e.key === 'r' && !e.ctrlKey && !e.metaKey) setFlyToLocation({ lat: 20, lng: 0, zoom: 2.5, ts: Date.now() });
       if (e.key === 'g') {
@@ -1879,32 +1834,6 @@ export default function Dashboard() {
       {/* ── RIGHT TOOL STRIP (desktop only — mobile uses bottom nav) ── */}
       {!isMobile && <motion.div data-hud initial={{ opacity: 0, x: 12 }} animate={revealed ? { opacity: 1, x: 0 } : { opacity: 0, x: 12 }} transition={hudIn(0.3)} className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 z-[250] pointer-events-auto bg-black/40 backdrop-blur-sm p-1 rounded-full border border-white/5">
         <div className="relative group">
-          <button onClick={() => { setShowIntel(!showIntel); setShowOi(false); setShowMarkets(false); setShowAlerts(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 border duration-200 ${showIntel ? 'bg-[var(--gold-primary)]/20 border-[var(--gold-primary)]/70 shadow-[0_0_18px_rgba(var(--gold-rgb),0.35)]' : 'bg-[var(--gold-primary)]/[0.07] border-[var(--gold-primary)]/35 hover:bg-[var(--gold-primary)]/15 hover:border-[var(--gold-primary)]/60 hover:shadow-[0_0_14px_rgba(var(--gold-rgb),0.25)]'}`} title="OSINT Recon — IP lookup, network sweep, geolocation" aria-label="OSINT Recon" aria-expanded={showIntel}>
-            <Radar className={`w-4 h-4 ${showIntel ? 'text-[var(--gold-light)]' : 'text-[var(--gold-primary)]'}`} />
-            {showIntel && (
-              <span
-                aria-hidden="true"
-                className="absolute -right-1 top-1/2 -translate-y-1/2 h-4 w-[2px] rounded-full bg-current text-[var(--gold-primary)]"
-              />
-            )}
-          </button>
-          <span className="absolute right-11 top-1/2 -translate-y-1/2 px-2 py-1 text-[9px] font-mono tracking-wider text-white/80 bg-black/80 backdrop-blur-sm rounded whitespace-nowrap opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity pointer-events-none">RECON</span>
-          <AnimatePresence>
-            {showIntel && (
-              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="absolute right-12 top-1/2 -translate-y-1/2 w-80">
-                <OsintPanel onSweepVisualize={setSweepData} onScanGeolocate={(target, data) => {
-                  setScanTargets(prev => {
-                    const existing = prev.filter(t => t.id !== target);
-                    return [{ id: target, timestamp: Date.now(), ...data }, ...existing].slice(0, 10);
-                  });
-                  setFlyToLocation({ lat: data.lat, lng: data.lng, ts: Date.now() });
-                }} />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        <div className="relative group">
           <button onClick={() => { setShowIntel(false); setShowOi(false); setShowAlerts(false); setShowMarkets(false); setShowSpaceCam(v => !v); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showSpaceCam ? 'bg-[#00E5FF]/20' : 'hover:bg-white/10'}`} title="Live from Space — 24/7 video downlink from the ISS" aria-label="Live from Space" aria-expanded={showSpaceCam}>
             <Radio className={`w-4 h-4 ${showSpaceCam ? 'text-[#00E5FF]' : 'text-white/60'}`} />
             {showSpaceCam && (
@@ -1975,36 +1904,6 @@ export default function Dashboard() {
             )}
           </button>
           <span className="absolute right-11 top-1/2 -translate-y-1/2 px-2 py-1 text-[9px] font-mono tracking-wider text-white/80 bg-black/80 backdrop-blur-sm rounded whitespace-nowrap opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity pointer-events-none">DRAW</span>
-        </div>
-
-        {/* A named group: the OI panel opens inside this wrapper, and an unnamed group would light every hover style in the panel at once. */}
-        <div ref={oiAnchor} className="relative group/oi">
-          {/* OI, the strip's main tool: bigger than the rest, in the middle of it, in its own colours. */}
-          <button onClick={() => { setShowOi(!showOi); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); }}
-            className={`relative w-11 h-11 rounded-full flex flex-col items-center justify-center gap-[3px] border transition-all duration-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showOi ? 'bg-[var(--gold-primary)]/20 border-[var(--gold-primary)]/70 shadow-[0_0_18px_rgba(var(--gold-rgb),0.35)]' : 'bg-[var(--gold-primary)]/[0.07] border-[var(--gold-primary)]/35 hover:bg-[var(--gold-primary)]/15 hover:border-[var(--gold-primary)]/60 hover:shadow-[0_0_14px_rgba(var(--gold-rgb),0.25)]'}`}
-            title="OI — talk to it and it works the map for you, or run a forecast, on your own AI key (O)" aria-label="OI" aria-expanded={showOi}>
-            <OiMark size={18} live={oi.state?.status === 'running' || assist.busy} />
-            <span className={`text-[7.5px] font-mono font-semibold tracking-[0.2em] leading-none pl-[0.2em] ${showOi ? 'text-[var(--gold-light)]' : 'text-[var(--gold-primary)]'}`}>OI</span>
-            {showOi && (
-              <span
-                aria-hidden="true"
-                className="absolute -right-1 top-1/2 -translate-y-1/2 h-5 w-[2px] rounded-full bg-current text-[var(--gold-primary)]"
-              />
-            )}
-            {oi.state?.status === 'running' && <span aria-hidden="true" className="absolute top-0 right-0 w-2 h-2 rounded-full bg-[var(--gold-light)] border border-black/60 animate-pulse" />}
-          </button>
-          {!showOi && <span className="absolute right-14 top-1/2 -translate-y-1/2 px-2 py-1 text-[9px] font-mono tracking-wider text-white/80 bg-black/80 backdrop-blur-sm rounded whitespace-nowrap opacity-0 group-hover/oi:opacity-100 group-focus-within/oi:opacity-100 transition-opacity pointer-events-none">OI · ASSIST &amp; FORECAST</span>}
-          <AnimatePresence>
-            {showOi && (
-              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="absolute right-[60px] w-[412px]" style={{ top: oiTop }}>
-                <OiPanel oi={oi} selected={oiSelected} onSelect={setOiSelected} onClose={() => { setShowOi(false); setOiTheater(false); setOiAutoFocus(false); }}
-                  focus={oiFocus} onFocus={toggleOiFocus} onLocate={handleOiLocate}
-                  theater={oiTheater} onTheater={setOiTheater} following={oiFollowing} onFollow={followOi}
-                  assist={assist} mode={oiMode} onMode={setOiMode} speakOn={oiVoice} onSpeak={setOiVoicePersist} autoFocus={oiAutoFocus}
-                  stage={oiStage} onStage={setOiStage} />
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
 
         <div className="relative group">
@@ -2217,8 +2116,6 @@ export default function Dashboard() {
                 { id: 'layers' as const, icon: Layers, label: 'LAYERS' },
                 { id: 'markets' as const, icon: BarChart3, label: 'MARKETS' },
                 { id: 'intel' as const, icon: Newspaper, label: 'INTEL' },
-                { id: 'recon' as const, icon: Radar, label: 'RECON' },
-                { id: 'oi' as const, icon: Orbit, label: 'OI' },
                 { id: 'search' as const, icon: Search, label: 'SEARCH' },
                 // Routing was reachable only from the desktop tool rail, so a
                 // phone could not open it at all. It sits next to SEARCH
@@ -2254,8 +2151,8 @@ export default function Dashboard() {
                     disabled={isRoute && Boolean(navSession)}
                     className={`mobile-nav-btn ${active ? 'active' : ''}`}
                   >
-                    <tab.icon className={`w-4 h-4 ${tab.id === 'recon' ? 'text-[var(--cyan-primary)]' : ''}`} />
-                    <span className={tab.id === 'recon' ? 'text-[var(--cyan-primary)]' : ''}>{tab.label}</span>
+                    <tab.icon className="w-4 h-4" />
+                    <span>{tab.label}</span>
                   </button>
                 );
               })}
@@ -2268,14 +2165,14 @@ export default function Dashboard() {
               <motion.div
                 initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
                 transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-                className={`fixed bottom-[52px] left-0 right-0 z-[400] glass-panel ${mobilePanel === 'oi' ? 'oi-glass' : ''} rounded-b-none overflow-y-auto styled-scrollbar`}
+                className={`fixed bottom-[52px] left-0 right-0 z-[400] glass-panel rounded-b-none overflow-y-auto styled-scrollbar`}
                 style={{ maxHeight: 'min(55vh, calc(100dvh - 100px))', paddingBottom: 'env(safe-area-inset-bottom, 4px)' }}
               >
                 <div className="mobile-drawer-handle" />
                 <div className="px-3 pb-3">
                   <div className="flex items-center justify-between mb-2">
                     <span className="hud-text text-[10px] text-[var(--text-primary)]">
-                      {mobilePanel === 'layers' ? 'LAYERS & STATS' : mobilePanel === 'markets' ? 'MARKETS & INTEL' : mobilePanel === 'intel' ? 'INTEL FEED' : mobilePanel === 'recon' ? 'OSIRIS RECON' : mobilePanel === 'remote' ? 'WORLD REMOTE' : mobilePanel === 'oi' ? 'OSIRIS OI' : 'SEARCH'}
+                      {mobilePanel === 'layers' ? 'LAYERS & STATS' : mobilePanel === 'markets' ? 'MARKETS & INTEL' : mobilePanel === 'intel' ? 'INTEL FEED' : mobilePanel === 'remote' ? 'WORLD REMOTE' : 'SEARCH'}
                     </span>
                     <button onClick={() => setMobilePanel(null)} className="text-[var(--text-muted)] p-1"><X className="w-4 h-4" /></button>
                   </div>
@@ -2297,22 +2194,11 @@ export default function Dashboard() {
                     </>
                   )}
                   {mobilePanel === 'markets' && <MarketsPanel data={data} spaceWeather={spaceWeather} />}
-                  {mobilePanel === 'oi' && (
-                    <OiPanel oi={oi} selected={oiSelected} onSelect={setOiSelected} embedded focus={oiFocus} onFocus={toggleOiFocus}
-                      onLocate={handleOiLocate} following={oiFollowing} onFollow={followOi}
-                      assist={assist} mode={oiMode} onMode={setOiMode} speakOn={oiVoice} onSpeak={setOiVoicePersist}
-                      stage={oiStage} onStage={setOiStage} />
-                  )}
                   {mobilePanel === 'intel' && <IntelFeed data={data} onLocate={(lat, lng) => { setFlyToLocation({ lat, lng, ts: Date.now() }); setMobilePanel(null); }} />}
                   {mobilePanel === 'search' && (
                     <div className="space-y-2">
                       <SearchBar embedded center={mapCenter} onDirections={openDirectionsTo} onLocate={(lat, lng, zoom) => { setFlyToLocation({ lat, lng, zoom, ts: Date.now() }); setMobilePanel(null); }} />
                       <SharePanel mapView={mapView} activeLayers={activeLayers} mouseCoords={null} />
-                    </div>
-                  )}
-                  {mobilePanel === 'recon' && (
-                    <div className="space-y-2">
-                      <OsintPanel isOpen={true} onClose={() => setMobilePanel(null)} isMobile={true} onSweepVisualize={setSweepData} />
                     </div>
                   )}
                   {mobilePanel === 'remote' && (

@@ -30,6 +30,7 @@ import { attachTerrain, type TerrainStatus } from '@/lib/map-terrain';
 import { applyMapProjection } from '@/lib/map-projection';
 import { attachTransit, type TransitStatus } from '@/lib/transit-layer';
 import { installReliefProtocol } from '@/lib/lidar/relief-tiles';
+import { DEFAULT_VIEW } from '@/lib/default-view';
 import { BASEMAP_PROTOCOL, basemapRequestUrl, basemapTileLoader } from '@/lib/basemap/tile-backup';
 import { syncLidarLayers } from '@/lib/lidar/map-layers';
 import type { LidarMapOverlay } from '@/lib/lidar/store';
@@ -402,11 +403,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
        offset is a free, instant stand-in for longitude (15° an hour), so the
        fly-in to their city after the splash is a dive, not a spin round the
        planet. This used to open on Bulgaria at zoom 6.5 for everyone. */
-    const facingLng = Math.max(-180, Math.min(180, -new Date().getTimezoneOffset() / 4));
     const baseOptions = {
       container,
       style: styleUrl,
-      center: [facingLng, 20] as [number, number], zoom: 1.8, minZoom: 1.5, maxZoom: 18,
+      center: [DEFAULT_VIEW.lng, DEFAULT_VIEW.lat] as [number, number], zoom: DEFAULT_VIEW.zoom, minZoom: 1.5, maxZoom: 18,
       /* The basemap is drawn from OpenStreetMap, and the places on it
          are searched and named through OpenStreetMap too. Both have to be
          credited on the map itself (issue #16). It is collapsed by default so

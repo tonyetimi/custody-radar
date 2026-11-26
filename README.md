@@ -1,3 +1,5 @@
+This is a full-fidelity internal fork of OSIRIS AI for Custody's command and desktop surfaces, serving every upstream data layer except the RECON scanner backend, crypto/sanctions screening, and the OI prediction engine, removed for reasons unrelated to performance or scope.
+
 <div align="center">
 
 # ⬡ OSIRIS
